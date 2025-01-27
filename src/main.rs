@@ -1,10 +1,6 @@
 #![allow(clippy::unnecessary_wraps)]
 
-use std::{
-    io::{self, Read, Write},
-    path::PathBuf,
-    str::FromStr,
-};
+use std::{path::PathBuf, str::FromStr};
 
 #[cfg(not(debug_assertions))]
 use std::panic::catch_unwind;
@@ -28,7 +24,8 @@ use rusqlite::{params, Connection, Result};
 #[derive(Parser)]
 struct Args {
     #[clap(long, short)]
-    db: Option<PathBuf>,
+    /// The path to the data directory
+    data_dir: Option<PathBuf>,
     #[clap(subcommand)]
     action: Option<Action>,
 }
@@ -36,50 +33,18 @@ struct Args {
 #[derive(Subcommand, Default)]
 enum Action {
     #[default]
+    /// Start the terminal user interface (default if no command is specified)
     Tui,
-    Cli,
-    Add {
-        date: Option<String>,
-    },
-    Remove {
-        date: Option<String>,
-    },
+    /// Adds a date to the list of home office days
+    Add { date: Option<String> },
+    /// Removes a date from the list of home office days
+    Remove { date: Option<String> },
+    /// Lists all home office days
     List,
+    /// Prints the data directory
     DataDir,
+    /// Exports all home office days
     Export,
-}
-
-fn interactive_mode(conn: &Connection) -> Result<()> {
-    println!("Home Office Tracker");
-    println!("1. Add (t)oday's home office day (default)");
-    println!("2. (A)dd a specific home office day");
-    println!("3. (L)ist all home office days");
-    println!("4. (D)elete a home office day");
-    println!("5. (E)xport all home office days");
-    print!("Choose an option (default is 1): ");
-    io::stdout().flush().unwrap();
-
-    enable_raw_mode().unwrap();
-    let input = std::io::stdin()
-        .bytes()
-        .next()
-        .and_then(Result::ok)
-        .map(|byte| byte as char)
-        .unwrap();
-    disable_raw_mode().unwrap();
-
-    println!();
-
-    match input.to_ascii_lowercase() {
-        '\r' | '\n' | '1' | 't' => add_today(conn)?,
-        '2' | 'a' => add_specific_date(conn)?,
-        '3' | 'l' => list_dates(conn)?,
-        '4' | 'd' => delete_home_office_day(conn)?,
-        '5' | 'e' => export_dates(conn)?,
-        _ => println!("Invalid option."),
-    }
-
-    Ok(())
 }
 
 fn parse_dates_or_default(input: Option<String>) -> Vec<NaiveDate> {
@@ -95,7 +60,7 @@ fn parse_dates_or_default(input: Option<String>) -> Vec<NaiveDate> {
             let v: Vec<_> = i
                 .split("::")
                 .map(|date| {
-                    NaiveDate::parse_from_str(dbg!(date).trim(), "%Y-%m-%d").unwrap_or_else(|_| {
+                    NaiveDate::parse_from_str(date.trim(), "%Y-%m-%d").unwrap_or_else(|_| {
                         NaiveDate::parse_from_str(date.trim(), "%d.%m.%Y").unwrap()
                     })
                 })
@@ -123,10 +88,10 @@ fn parse_dates_or_default(input: Option<String>) -> Vec<NaiveDate> {
 }
 
 fn run() -> Result<()> {
-    let Args { action, db } = Args::parse();
+    let Args { action, data_dir } = Args::parse();
 
-    let data_dir = if let Some(db) = db {
-        db
+    let data_dir = if let Some(data_dir) = data_dir {
+        data_dir
     } else if let Some(dir) = dirs::data_dir() {
         dir.join("home_office_tracker")
     } else {
@@ -151,7 +116,6 @@ fn run() -> Result<()> {
             println!("{}", data_dir.display());
             Ok(())
         }
-        Action::Cli => interactive_mode(&conn),
         Action::List => list_dates(&conn),
         Action::Add { date } => add_dates(&conn, &parse_dates_or_default(date)),
         Action::Remove { date } => remove_dates(&conn, &parse_dates_or_default(date)),
@@ -218,40 +182,6 @@ fn add_date(conn: &Connection, date: NaiveDate) -> Result<()> {
     Ok(())
 }
 
-fn add_today(conn: &Connection) -> Result<()> {
-    add_date(
-        conn,
-        NaiveDate::parse_from_str(&Local::now().format("%Y-%m-%d").to_string(), "%Y-%m-%d")
-            .unwrap(),
-    )
-}
-
-fn add_specific_date(conn: &Connection) -> Result<()> {
-    let today = Local::now();
-    let today_string = today.format("%Y-%m-%d").to_string();
-
-    print!("Enter a date (YYYY-MM-DD) or press Enter to use today [{today_string}]: ");
-    io::stdout().flush().unwrap();
-
-    let mut input = String::new();
-    io::stdin().read_line(&mut input).unwrap();
-    let input = input.trim();
-
-    let date_to_add = if input.is_empty() {
-        NaiveDate::parse_from_str(&today.format("%Y-%m-%d").to_string(), "%Y-%m-%d").unwrap()
-    } else {
-        let date = NaiveDate::parse_from_str(input, "%Y-%m-%d");
-        if let Ok(date) = date {
-            date
-        } else {
-            println!("Invalid date format. Please use YYYY-MM-DD.");
-            return Ok(());
-        }
-    };
-
-    add_date(conn, date_to_add)
-}
-
 fn list_dates(conn: &Connection) -> Result<()> {
     let mut stmt = conn.prepare("SELECT date FROM home_office_days ORDER BY date")?;
     let rows = stmt.query_map([], |row| {
@@ -286,17 +216,6 @@ fn remove_date(conn: &Connection, date: NaiveDate) -> Result<()> {
     }
 
     Ok(())
-}
-
-fn delete_home_office_day(conn: &Connection) -> Result<()> {
-    print!("Enter a date to delete (YYYY-MM-DD): ");
-    io::stdout().flush().unwrap();
-
-    let mut input = String::new();
-    io::stdin().read_line(&mut input).unwrap();
-    let input = input.trim();
-
-    remove_date(conn, NaiveDate::parse_from_str(input, "%Y-%m-%d").unwrap())
 }
 
 fn get_export(conn: &Connection) -> Result<Vec<String>> {
@@ -432,9 +351,11 @@ impl AppState {
     }
 }
 
+const HELP_KEYBINDING_SEPARATOR: &str = "\n- ";
+
 #[allow(clippy::too_many_lines)]
 fn run_tui(conn: Connection) -> anyhow::Result<()> {
-    let stdout = io::stdout();
+    let stdout = std::io::stdout();
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -484,10 +405,8 @@ fn run_tui(conn: Connection) -> anyhow::Result<()> {
                 f.render_widget(input_paragraph, left_chunks[1]);
             }
 
-            const NL: &str = "\n- ";
-
             // Render the help box
-            let help_paragraph = Paragraph::new(format!("Keybindings:{NL}Enter to add the current day{NL}A to add a specific day{NL}D to delete the selected day{NL}Esc or Q to exit"))
+            let help_paragraph = Paragraph::new(format!("Keybindings:{HELP_KEYBINDING_SEPARATOR}Enter to add the current day{HELP_KEYBINDING_SEPARATOR}A to add a specific day{HELP_KEYBINDING_SEPARATOR}D to delete the selected day{HELP_KEYBINDING_SEPARATOR}Esc or Q to exit"))
                 .wrap(Wrap { trim: true })
                 .block(Block::default().borders(Borders::ALL).title("Help"));
             f.render_widget(help_paragraph, chunks[1]);
