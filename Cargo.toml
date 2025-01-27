@@ -2,6 +2,9 @@
 name = "homeofficetracker"
 version = "0.1.0"
 edition = "2021"
+description = "Simple tool to track which days you worked from home"
+license-file = "LICENSE"
+repository = "https://github.com/hardliner66/homeofficetracker"
 
 [[bin]]
 name = "hot"
