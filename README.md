@@ -1,6 +1,10 @@
 # Home Office Tracker
 Simple tool to track which days you worked from home.
 
+## Install
+You can either download the pre-built binaries from the [release page](https://github.com/hardliner66/homeofficetracker/releases/latest),
+install from [crates.io](https://crates.io/crates/homeofficetracker) by running `cargo install homeofficetracker --locked`.
+
 ## Usage
 ```
 Usage: hot.exe [OPTIONS] [COMMAND]
