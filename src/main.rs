@@ -12,7 +12,7 @@ use std::panic::catch_unwind;
 use chrono::{Local, NaiveDate};
 use clap::{Parser, Subcommand};
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind},
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     terminal::{disable_raw_mode, enable_raw_mode, is_raw_mode_enabled},
 };
 use ratatui::{
@@ -20,7 +20,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Modifier, Style},
     text::Span,
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
     Terminal,
 };
 use rusqlite::{params, Connection, Result};
@@ -432,6 +432,7 @@ impl AppState {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn run_tui(conn: Connection) -> anyhow::Result<()> {
     let stdout = io::stdout();
     let backend = CrosstermBackend::new(stdout);
@@ -444,9 +445,18 @@ fn run_tui(conn: Connection) -> anyhow::Result<()> {
     loop {
         terminal.draw(|f| {
             let chunks = Layout::default()
-                .direction(Direction::Vertical)
+                .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(80), Constraint::Percentage(20)])
                 .split(f.area());
+
+            let left_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints(if state.input_box.is_some() {
+                    [Constraint::Percentage(80), Constraint::Percentage(20)]
+                } else {
+                    [Constraint::Percentage(100), Constraint::Percentage(0)]
+                })
+                .split(chunks[0]);
 
             // Render the list of strings
             let items: Vec<ListItem> = state
@@ -463,27 +473,34 @@ fn run_tui(conn: Connection) -> anyhow::Result<()> {
                 })
                 .collect();
 
-            let list = List::new(items).block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Home Office Days"),
-            );
-            f.render_widget(list, chunks[0]);
+            let list =
+                List::new(items).block(Block::default().borders(Borders::ALL).title("Strings"));
+            f.render_widget(list, left_chunks[0]);
 
-            // Render a placeholder input box
+            // Render the input box
             if let Some(ref input) = state.input_box {
                 let input_paragraph = Paragraph::new(input.clone())
                     .block(Block::default().borders(Borders::ALL).title("Input"));
-                f.render_widget(input_paragraph, chunks[1]);
-            } else {
-                let help_paragraph =
-                    Paragraph::new("Press A to add, D to delete, Esc or Q to exit")
-                        .block(Block::default().borders(Borders::ALL).title("Help"));
-                f.render_widget(help_paragraph, chunks[1]);
+                f.render_widget(input_paragraph, left_chunks[1]);
             }
+
+            const NL: &str = "\n- ";
+
+            // Render the help box
+            let help_paragraph = Paragraph::new(format!("Keybindings:{NL}Enter to add the current day{NL}A to add a specific day{NL}D to delete the selected day{NL}Esc or Q to exit"))
+                .wrap(Wrap { trim: true })
+                .block(Block::default().borders(Borders::ALL).title("Help"));
+            f.render_widget(help_paragraph, chunks[1]);
         })?;
 
         if let Event::Key(key) = event::read()? {
+            if let (KeyCode::Char('c'), KeyEventKind::Press, modifiers) =
+                (key.code, key.kind, key.modifiers)
+            {
+                if modifiers.contains(KeyModifiers::CONTROL) {
+                    break;
+                }
+            }
             if state.input_box.is_some() {
                 if key.kind == KeyEventKind::Press {
                     match key.code {
@@ -525,6 +542,10 @@ fn run_tui(conn: Connection) -> anyhow::Result<()> {
                         if !state.dates.is_empty() {
                             state.start_input(InputMode::Remove);
                         }
+                    }
+                    KeyCode::Enter => {
+                        state.add_string(Local::now().format("%Y-%m-%d").to_string());
+                        state.update();
                     }
                     KeyCode::Up => {
                         state.move_selection_up();
