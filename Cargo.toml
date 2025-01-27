@@ -1,6 +1,6 @@
 [package]
 name = "homeofficetracker"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Simple tool to track which days you worked from home"
 license-file = "LICENSE"
